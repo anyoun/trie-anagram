@@ -94,19 +94,21 @@ def buildTrie():
     return rootNode
 
 def doLookup(node, chars, wilds):
-    for word in node.getWords():
-        print word
+    words = set(node.getWords())
 
     if len(chars) == 0:
-        return
+        return words
 
     if wilds > 0:
         for n in node.getChildren():
-            doLookup(n, list(chars), wilds - 1)
+            words.update(doLookup(n, list(chars), wilds - 1))
 
     char = chars.pop()
+    words.update(doLookup(node, list(chars), wilds))
     node = node.getChild(char)
-    doLookup(node, chars, wilds)
+    words.update(doLookup(node, chars, wilds))
+
+    return words
 
 def lookup(rootNode, searchWord):
     print 'Looking up "%s"...' % (searchWord)
@@ -116,7 +118,7 @@ def lookup(rootNode, searchWord):
             wilds += 1
     chars = wordToChars(searchWord)
     chars.reverse()
-    doLookup(rootNode, chars, wilds)
+    return doLookup(rootNode, chars, wilds)
 
 trie = buildTrie()
 # print trie.toString()
@@ -127,4 +129,5 @@ while True:
         searchWord = raw_input('Search input: ')
     except EOFError as e:
         break
-    lookup(trie, searchWord)
+    for word in lookup(trie, searchWord):
+        print word
