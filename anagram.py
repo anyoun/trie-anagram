@@ -1,4 +1,8 @@
-import sys, os, readline
+#TODO: Take search at command-line optionally for piping output
+#TODO: Print words that matched together on the same line
+#      When we hit a word, both keep going and restart from root with fewer chars
+
+import sys, os, readline, argparse
 
 global nodeCount, wordCount
 nodeCount = 0
@@ -10,7 +14,9 @@ class Word:
         self.frequency = frequency
         self.subcategory = subcategory
     def __str__(self):
-        return '%i %s (%s)' % (self.frequency, self.word, self.subcategory)
+        return '%s (%i%% %s)' % (self.word, self.frequency, self.subcategory)
+    def weight(self):
+        return len(self.word) * 10 + self.frequency
 
 class TrieNode(object):
     def __init__(self):
@@ -41,6 +47,9 @@ class TrieNode(object):
             s += " " + word
         return s
 
+def calcWordSetWeight(wordSet):
+    return sum(map(lambda w: w.weight(), wordSet))
+
 def wordToChars(word):
     word = word.strip().strip('.').lower()
     # chars = [x for x in word]
@@ -67,7 +76,7 @@ def addFileToTrie(rootNode, filePath, frequency, subcategory):
 def buildTrie():
     rootNode = TrieNode()
     sizes = [ 10, 20, 35, 40, 50, 55, 60, 70, 80, 95 ]
-    max_size = 50
+    max_size = 20
     category = 'american' #canadian, british, british_z
     subcategories = [
         # 'abbreviations',
@@ -88,22 +97,26 @@ def buildTrie():
                 size, subcategory)
     return rootNode
 
-def doLookup(node, chars, wilds):
-    words = set(node.getWords())
+def doLookup(rootNode, node, chars, wilds, foundWordSets, wordSet):
+    for word in node.getWords():
+        doLookup(rootNode, rootNode, chars, wilds, foundWordSets, wordSet | set([word]))
 
     if len(chars) == 0:
-        return words
+        if len(wordSet) > 0:
+            foundWordSets.add(frozenset(wordSet))
+        return
 
     if wilds > 0:
         for n in node.getChildren():
-            words.update(doLookup(n, list(chars), wilds - 1))
+            doLookup(rootNode, n, list(chars), wilds - 1, foundWordSets, wordSet)
 
     char = chars.pop()
-    words.update(doLookup(node, list(chars), wilds))
-    node = node.getChild(char)
-    words.update(doLookup(node, chars, wilds))
 
-    return words
+    # This allows finding matches that ignore a character
+    doLookup(rootNode, node, list(chars), wilds, foundWordSets, wordSet)
+
+    node = node.getChild(char)
+    doLookup(rootNode, node, chars, wilds, foundWordSets, wordSet)
 
 def lookup(rootNode, searchWord):
     print 'Looking up "%s"...' % (searchWord)
@@ -113,22 +126,33 @@ def lookup(rootNode, searchWord):
             wilds += 1
     chars = wordToChars(searchWord)
     chars.reverse()
-    return doLookup(rootNode, chars, wilds)
+    foundWordSets = set()
+    doLookup(rootNode, rootNode, chars, wilds, foundWordSets, frozenset())
+    return foundWordSets
 
-def printWords(words):
-    wordList = list(words)
-    wordList.sort(key=lambda w: w.frequency, reverse= True)
-    wordList.sort(key=lambda w: len(w.word), reverse= True)
-    for word in wordList:
-        print word
+def printWords(foundWordSets):
+    l = list(foundWordSets)
+    l.sort(key=calcWordSetWeight, reverse=True)
+    for wordSet in l:
+        print "%i:" % calcWordSetWeight(wordSet),
+        for word in wordSet:
+            print word,
+        print
 
 trie = buildTrie()
-# print trie.toString()
 print "Built %i nodes for %i words" % (nodeCount, wordCount)
 
-while True:
-    try:
-        searchWord = raw_input('Search input: ')
-    except EOFError as e:
-        break
-    printWords(lookup(trie, searchWord))
+parser = argparse.ArgumentParser(description="Anagram finder")
+# parser.add_argument('--foo', help='foo help')
+parser.add_argument("searchString")
+args = parser.parse_args()
+
+if args.searchString:
+    printWords(lookup(trie, args.searchString))
+else:
+    while True:
+        try:
+            searchWord = raw_input('Search input: ')
+        except EOFError as e:
+            break
+        printWords(lookup(trie, searchWord))
