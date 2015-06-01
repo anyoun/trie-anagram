@@ -1,8 +1,5 @@
 import sys, os, readline
 
-# path = '/Users/willt/Dropbox/Programming/anagram/scowl-2015.05.18/final/american-words.10'
-path = 'american-words.txt'
-
 global nodeCount, wordCount
 nodeCount = 0
 wordCount = 0
@@ -37,11 +34,7 @@ class TrieNode(object):
         return self.words
     def toString(self, indent = 0):
         s = "{ "
-        # first = True
         for char,node in self.children.items():
-            # if not first:
-            #     s += ", "
-            # first = False
             s += "\n%s%s: %s" % (' '*indent, char, node.toString(indent+1))
         s += " }"
         for word in self.words:
@@ -56,6 +49,8 @@ def wordToChars(word):
     return chars
 
 def addFileToTrie(rootNode, filePath, frequency, subcategory):
+    if not os.path.exists(filePath):
+        return
     f = open(filePath, 'r')
     for line in f:
         node = rootNode
@@ -72,13 +67,13 @@ def addFileToTrie(rootNode, filePath, frequency, subcategory):
 def buildTrie():
     rootNode = TrieNode()
     sizes = [ 10, 20, 35, 40, 50, 55, 60, 70, 80, 95 ]
-    max_size = 10
+    max_size = 50
     category = 'american' #canadian, british, british_z
     subcategories = [
         # 'abbreviations',
         # 'contractions',
-        # 'proper-names',
-        # 'upper',
+        'proper-names',
+        'upper',
         'words',
     ]
     for size in sizes:
@@ -120,6 +115,13 @@ def lookup(rootNode, searchWord):
     chars.reverse()
     return doLookup(rootNode, chars, wilds)
 
+def printWords(words):
+    wordList = list(words)
+    wordList.sort(key=lambda w: w.frequency, reverse= True)
+    wordList.sort(key=lambda w: len(w.word), reverse= True)
+    for word in wordList:
+        print word
+
 trie = buildTrie()
 # print trie.toString()
 print "Built %i nodes for %i words" % (nodeCount, wordCount)
@@ -129,5 +131,4 @@ while True:
         searchWord = raw_input('Search input: ')
     except EOFError as e:
         break
-    for word in lookup(trie, searchWord):
-        print word
+    printWords(lookup(trie, searchWord))
