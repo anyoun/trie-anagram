@@ -102,13 +102,14 @@ class TrieNode(object):
         self._children = { }
         self._words = set()
         Stats.nodeCount += 1
-    def getChild(self, char):
-        if char not in self._children:
+    def getOrCreateChild(self, char):
+        n = self._children.get(char)
+        if not n:
             n = TrieNode()
             self._children[char] = n
-            return n
-        else:
-            return self._children[char]
+        return n
+    def getChild(self, char):
+        return self._children.get(char)
     @property
     def children(self):
         return self._children.values()
@@ -158,7 +159,7 @@ def addFileToTrie(rootNode, f, frequency, subcategory):
         word = line.strip().lower()
         if Filtering.allowWord(word):
             for char in wordToChars(word):
-                node = node.getChild(char)
+                node = node.getOrCreateChild(char)
             node.addWord(word, frequency, subcategory)
             Stats.wordCount += 1
     return rootNode
@@ -221,8 +222,13 @@ def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, wordSe
     doLookup(rootNode, node, charNode, CharNode(char, skippedNode), wilds, foundWordSets, wordSet, depth+1)
 
     node = node.getChild(char)
-    if Config.traceLookup: print "%sSearching by using %s. %s left, %s skipped" % (depth*" ", char, charNode, skippedNode)
-    doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, wordSet, depth+1)
+    if node:
+        if Config.traceLookup: print "%sSearching by using %s. %s left, %s skipped" % (depth*" ", char, charNode, skippedNode)
+        doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, wordSet, depth+1)
+    else:
+        if Config.traceLookup: print "%sNo child for %s, terminating with %i word sets" % (depth*" ", char, len(wordSet))
+        if len(wordSet) > 0:
+            foundWordSets.add(frozenset(wordSet))
 
 def lookup(rootNode, searchWord):
     # print 'Looking up "%s"...' % (searchWord)
