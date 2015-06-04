@@ -5,8 +5,9 @@ import sys, os, readline, argparse
 
 
 class Config:
-    includePartialMatches = False
     traceLookup = False
+    includePartialMatches = False
+    sortCharactersByFrequency = True
     max_size = 20
     categories = [
         'english', #Base category
@@ -27,12 +28,14 @@ class Stats:
     nodeCount = 0
     wordCount = 0
 
+    letterCounts = { }
+
 class Filtering:
-    allowed_one_letter = set([
+    _allowed_one_letter = set([
         'a',
         'i',
     ])
-    allowed_two_letter = set([
+    _allowed_two_letter = set([
         'ah',
         'al',
         'by',
@@ -58,6 +61,11 @@ class Filtering:
         'us',
         'we',
     ])
+    @classmethod
+    def allowWord(self, word):
+        return not ('\'' in word or \
+            (len(word) == 1 and word not in self._allowed_one_letter) or \
+            (len(word) == 2 and word not in self._allowed_two_letter))
 
 class CharNode:
     def __init__(self, char, next):
@@ -125,43 +133,52 @@ def calcWordSetWeight(wordSet):
     return sum(map(lambda w: w.weight, wordSet)) / len(wordSet)
 
 def sortChars(charList):
-    charList.sort()
+    if Config.sortCharactersByFrequency:
+        charList.sort(key=lambda c: Stats.letterCounts.get(c, 0))
+    else:
+        charList.sort()
 
 def wordToChars(word):
     word = word.strip().strip('.').lower()
-    # chars = [x for x in word]
     chars = list(word)
     sortChars(chars)
     return chars
 
-def addFileToTrie(rootNode, filePath, frequency, subcategory):
-    if not os.path.exists(filePath):
-        return
-    f = open(filePath, 'r')
+def buildFrequency(f, category, subcategory, size):
+    for line in f:
+        word = line.strip().lower()
+        if Filtering.allowWord(word):
+            for char in wordToChars(word):
+                if Config.sortCharactersByFrequency:
+                    Stats.letterCounts[char] = Stats.letterCounts.get(char, 0) + 1
+
+def addFileToTrie(rootNode, f, frequency, subcategory):
     for line in f:
         node = rootNode
         word = line.strip().lower()
-        if '\'' in word or \
-            (len(word) == 1 and word not in Filtering.allowed_one_letter) or \
-            (len(word) == 2 and word not in Filtering.allowed_two_letter):
-            continue
-        for char in wordToChars(word):
-            node = node.getChild(char)
-        node.addWord(word, frequency, subcategory)
-        Stats.wordCount += 1
+        if Filtering.allowWord(word):
+            for char in wordToChars(word):
+                node = node.getChild(char)
+            node.addWord(word, frequency, subcategory)
+            Stats.wordCount += 1
     return rootNode
 
-def buildTrie():
-    rootNode = TrieNode()
+def withAllFiles(func):
     sizes = [ 10, 20, 35, 40, 50, 55, 60, 70, 80, 95 ]
     for size in sizes:
         if size > Config.max_size:
             break
         for category in Config.categories:
             for subcategory in Config.subcategories:
-                addFileToTrie(rootNode,
-                    'scowl_word_lists/%s-%s.%i' % (category, subcategory, size),
-                    size, subcategory)
+                filePath = 'scowl_word_lists/%s-%s.%i' % (category, subcategory, size)
+                if os.path.exists(filePath):
+                    f = open(filePath, 'r')
+                    func(f, category, subcategory, size)
+
+def buildTrie():
+    rootNode = TrieNode()
+    withAllFiles(buildFrequency)
+    withAllFiles(lambda f,cate,sub,size: addFileToTrie(rootNode, f, size, sub))
     return rootNode
 
 def combineSortChars(x, y):
