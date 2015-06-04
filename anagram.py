@@ -1,11 +1,11 @@
 # Optimization: Memoize search on trie nodes based on wilds/left/skipped
-
+# What about sorting by character frequency?
 
 import sys, os, readline, argparse
 
 
 class Config:
-    includePartialMatches = True
+    includePartialMatches = False
     traceLookup = False
     max_size = 20
     categories = [
@@ -84,37 +84,34 @@ class Word:
         self.subcategory = subcategory
     def __str__(self):
         return '%s (%i%% %s)' % (self.word, self.frequency, self.subcategory)
-    def __hash__(self):
-        return hash(self.word)
-    def __eq__(self, other):
-        return self.word == other.word
-    def __cmp__(self, other):
-        return cmp(self.word, other.word)
+    @property
     def weight(self):
         return len(self.word) * 10 + self.frequency / 10
 
 class TrieNode(object):
     def __init__(self):
         super(TrieNode, self).__init__()
-        self.children = { }
-        self.words = set()
+        self._children = { }
+        self._words = set()
         Stats.nodeCount += 1
     def getChild(self, char):
-        if char not in self.children:
+        if char not in self._children:
             n = TrieNode()
-            self.children[char] = n
+            self._children[char] = n
             return n
         else:
-            return self.children[char]
-    def getChildren(self):
-        return self.children.values()
+            return self._children[char]
+    @property
+    def children(self):
+        return self._children.values()
     def addWord(self, word, frequency, subcategory):
-        self.words.add(Word(word, frequency, subcategory))
-    def getWords(self):
-        return self.words
+        self._words.add(Word(word, frequency, subcategory))
+    @property
+    def words(self):
+        return self._words
     def toString(self, indent = 0):
         s = "{ "
-        for char,node in self.children.items():
+        for char,node in self._children.items():
             s += "\n%s%s: %s" % (' '*indent, char, node.toString(indent+1))
         s += " }"
         for word in self.words:
@@ -125,10 +122,9 @@ def calcWordSetLength(wordSet):
     return sum(map(lambda w: len(w.word), wordSet))
 
 def calcWordSetWeight(wordSet):
-    return sum(map(lambda w: w.weight(), wordSet)) / len(wordSet)
+    return sum(map(lambda w: w.weight, wordSet)) / len(wordSet)
 
 def sortChars(charList):
-     #What about sorting by character frequency?
     charList.sort()
 
 def wordToChars(word):
@@ -184,10 +180,7 @@ def combineSortChars(x, y):
     return outputNode
 
 def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, wordSet, depth):
-    # if depth > 100:
-    #     raise Exception("too deep!")
-
-    for word in node.getWords():
+    for word in node.words:
         newWordSet = wordSet | set([word])
         newCharNode = combineSortChars(charNode, skippedNode)
         if Config.traceLookup: print "%sFound: %s (already %s), continuing with %s" % (depth*" ", word, wordSet, newCharNode)
@@ -195,7 +188,7 @@ def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, wordSe
 
     if wilds > 0:
         if Config.traceLookup: print "%sUsing a wildcard to search all children..." % (depth*" ")
-        for n in node.getChildren():
+        for n in node.children:
             doLookup(rootNode, n, charNode, skippedNode, wilds-1, foundWordSets, wordSet, depth+1)
 
     if charNode == None:

@@ -10,7 +10,9 @@ class TestAnagrams(unittest.TestCase):
         stringSets = set()
         for wordSet in foundWordSets:
             s = ""
-            for word in wordSet:
+            sortedWords = list(wordSet)
+            sortedWords.sort()
+            for word in sortedWords:
                 if s != "": s += " "
                 s += word.word
             stringSets.add(s)
@@ -25,7 +27,7 @@ class TestAnagrams(unittest.TestCase):
         # self.assertLookup('clark', 'clark')
         self.assertLookup('roommy', 'my room')
 
-        self.assertLookup('dormitory', 'room dirty')
+        self.assertLookup('dormitory', 'dirty room')
         # self.assertLookup('mayorclark', 'mayor clark')
 
 if __name__ == '__main__':
