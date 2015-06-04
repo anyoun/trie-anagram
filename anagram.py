@@ -1,8 +1,11 @@
+# Optimization: Memoize search on trie nodes based on wilds/left/skipped
+
 
 import sys, os, readline, argparse
 
 
 class Config:
+    includePartialMatches = True
     traceLookup = False
     max_size = 20
     categories = [
@@ -66,6 +69,13 @@ class CharNode:
     @property
     def next(self):
         return self._next
+    def __str__(self):
+        x = self
+        s = ""
+        while x != None:
+            s += x.char
+            x = x.next
+        return s
 
 class Word:
     def __init__(self, word, frequency, subcategory):
@@ -74,6 +84,12 @@ class Word:
         self.subcategory = subcategory
     def __str__(self):
         return '%s (%i%% %s)' % (self.word, self.frequency, self.subcategory)
+    def __hash__(self):
+        return hash(self.word)
+    def __eq__(self, other):
+        return self.word == other.word
+    def __cmp__(self, other):
+        return cmp(self.word, other.word)
     def weight(self):
         return len(self.word) * 10 + self.frequency / 10
 
@@ -81,7 +97,7 @@ class TrieNode(object):
     def __init__(self):
         super(TrieNode, self).__init__()
         self.children = { }
-        self.words = [ ]
+        self.words = set()
         Stats.nodeCount += 1
     def getChild(self, char):
         if char not in self.children:
@@ -93,7 +109,7 @@ class TrieNode(object):
     def getChildren(self):
         return self.children.values()
     def addWord(self, word, frequency, subcategory):
-        self.words.append(Word(word, frequency, subcategory))
+        self.words.add(Word(word, frequency, subcategory))
     def getWords(self):
         return self.words
     def toString(self, indent = 0):
@@ -105,14 +121,21 @@ class TrieNode(object):
             s += " " + str(word)
         return s
 
+def calcWordSetLength(wordSet):
+    return sum(map(lambda w: len(w.word), wordSet))
+
 def calcWordSetWeight(wordSet):
-    return sum(map(lambda w: w.weight(), wordSet)) * len(wordSet)
+    return sum(map(lambda w: w.weight(), wordSet)) / len(wordSet)
+
+def sortChars(charList):
+     #What about sorting by character frequency?
+    charList.sort()
 
 def wordToChars(word):
     word = word.strip().strip('.').lower()
     # chars = [x for x in word]
     chars = list(word)
-    chars.sort() #What about sorting by character frequency?
+    sortChars(chars)
     return chars
 
 def addFileToTrie(rootNode, filePath, frequency, subcategory):
@@ -145,32 +168,51 @@ def buildTrie():
                     size, subcategory)
     return rootNode
 
-def doLookup(rootNode, node, charNode, wilds, foundWordSets, wordSet):
+def combineSortChars(x, y):
+    allList = []
+    while x != None:
+        allList.append(x.char)
+        x = x.next
+    while y != None:
+        allList.append(y.char)
+        y = y.next
+    sortChars(allList)
+    allList.reverse()
+    outputNode = None
+    for char in allList:
+        outputNode = CharNode(char, outputNode)
+    return outputNode
+
+def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, wordSet, depth):
+    # if depth > 100:
+    #     raise Exception("too deep!")
+
     for word in node.getWords():
         newWordSet = wordSet | set([word])
-        if Config.traceLookup: print "Found: %s" % (word)
-        doLookup(rootNode, rootNode, charNode, wilds, foundWordSets, newWordSet)
+        newCharNode = combineSortChars(charNode, skippedNode)
+        if Config.traceLookup: print "%sFound: %s (already %s), continuing with %s" % (depth*" ", word, wordSet, newCharNode)
+        doLookup(rootNode, rootNode, newCharNode, None, wilds, foundWordSets, newWordSet, depth+1)
+
+    if wilds > 0:
+        if Config.traceLookup: print "%sUsing a wildcard to search all children..." % (depth*" ")
+        for n in node.getChildren():
+            doLookup(rootNode, n, charNode, skippedNode, wilds-1, foundWordSets, wordSet, depth+1)
 
     if charNode == None:
-        if Config.traceLookup: print "No characters left, terminating with %i word sets" % (len(wordSet))
+        if Config.traceLookup: print "%sNo characters left, terminating with %i word sets" % (depth*" ", len(wordSet))
         if len(wordSet) > 0:
             foundWordSets.add(frozenset(wordSet))
         return
 
-    if wilds > 0:
-        if Config.traceLookup: print "Using a wildcard to search all children..."
-        for n in node.getChildren():
-            doLookup(rootNode, n, charNode, wilds - 1, foundWordSets, wordSet)
-
     char = charNode.char
     charNode = charNode.next
 
-    if Config.traceLookup: print "Searching by skipping %s ..." % (char)
-    doLookup(rootNode, node, charNode, wilds, foundWordSets, wordSet)
+    if Config.traceLookup: print "%sSearching by skipping %s, %s left, %s skipped" % (depth*" ", char, charNode, CharNode(char, skippedNode))
+    doLookup(rootNode, node, charNode, CharNode(char, skippedNode), wilds, foundWordSets, wordSet, depth+1)
 
     node = node.getChild(char)
-    if Config.traceLookup: print "Searching by using %s ..." % (char)
-    doLookup(rootNode, node, charNode, wilds, foundWordSets, wordSet)
+    if Config.traceLookup: print "%sSearching by using %s. %s left, %s skipped" % (depth*" ", char, charNode, skippedNode)
+    doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, wordSet, depth+1)
 
 def lookup(rootNode, searchWord):
     # print 'Looking up "%s"...' % (searchWord)
@@ -184,13 +226,15 @@ def lookup(rootNode, searchWord):
     for ch in reversedChars:
         chars = CharNode(ch, chars)
     foundWordSets = set()
-    doLookup(rootNode, rootNode, chars, wilds, foundWordSets, frozenset())
+    doLookup(rootNode, rootNode, chars, None, wilds, foundWordSets, frozenset(), 0)
     return foundWordSets
 
-def printWords(foundWordSets):
+def printWords(foundWordSets, expectedLength):
     l = list(foundWordSets)
     l.sort(key=calcWordSetWeight, reverse=True)
     for wordSet in l:
+        if not Config.includePartialMatches and calcWordSetLength(wordSet) < expectedLength:
+            continue
         print "%i:" % calcWordSetWeight(wordSet),
         for word in wordSet:
             print word,
@@ -198,11 +242,14 @@ def printWords(foundWordSets):
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Anagram finder")
+    parser.add_argument('-p', '--includePartialMatches', action='store_true')
     grp = parser.add_mutually_exclusive_group(required=True)
     grp.add_argument('--dump', action='store_true', help='Dump out entire search trie')
     grp.add_argument("--search")
     grp.add_argument("-i", "--interactiveSearch", action='store_true')
     args = parser.parse_args()
+
+    Config.includePartialMatches = args.includePartialMatches
 
     trie = buildTrie()
     print "Built %i nodes for %i words" % (Stats.nodeCount, Stats.wordCount)
@@ -210,11 +257,11 @@ if __name__ == '__main__':
     if args.dump:
         print trie.toString()
     elif args.search:
-        printWords(lookup(trie, args.search))
+        printWords(lookup(trie, args.search), len(args.search))
     elif args.interactiveSearch:
         while True:
             try:
                 searchWord = raw_input('Search input: ')
             except EOFError as e:
                 break
-            printWords(lookup(trie, searchWord))
+            printWords(lookup(trie, searchWord), len(searchWord))

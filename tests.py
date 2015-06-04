@@ -17,12 +17,15 @@ class TestAnagrams(unittest.TestCase):
         self.assertIn(someMatch, stringSets)
 
     def test_single_words(self):
+        self.assertLookup('my', 'my')
         self.assertLookup('book', 'book')
         self.assertLookup('room', 'room')
         self.assertLookup('dirty', 'dirty')
         self.assertLookup('mayor', 'mayor')
         # self.assertLookup('clark', 'clark')
-        self.assertLookup('dormitory', 'dirty room')
+        self.assertLookup('roommy', 'my room')
+
+        self.assertLookup('dormitory', 'room dirty')
         # self.assertLookup('mayorclark', 'mayor clark')
 
 if __name__ == '__main__':
