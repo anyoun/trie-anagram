@@ -30,11 +30,14 @@ class TestAnagrams(unittest.TestCase):
         self.assertLookup('dirty', 'dirty')
         self.assertLookup('mayor', 'mayor')
         # self.assertLookup('clark', 'clark')
-        self.assertLookup('roommy', 'my room')
+        print "single_words took %s" % (datetime.now() - startTime)
 
+    def test_multiple_words(self):
+        startTime = datetime.now()
+        self.assertLookup('roommy', 'my room')
         self.assertLookup('dormitory', 'dirty room')
         # self.assertLookup('mayorclark', 'mayor clark')
-        print "Lookup took %s" % (datetime.now() - startTime)
+        print "multiple_words took %s" % (datetime.now() - startTime)
 
 if __name__ == '__main__':
     unittest.main()
