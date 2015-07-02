@@ -1,15 +1,8 @@
-# Optimization: Memoize search
-# To correctly memoize, doLookup needs to return all of the matches. This
-#   might be multiple word lists. We'll need to add the already matched word
-#   list on to this. We will no longer pass foundWordSets around through args.
 # Can also memoize failure: If we've already searched with more skpped/missed/wilds
 #   and that already failed, we can just stop now.
-# Would it be faster to implement wilds by just generating all of the search
-#   possibilities ahead of time? It should be the same amout of searching but
-#   might increase the memoization hit rate for failures. Might decrease
-#   hit rate for successes though.
-# Multi-word searching doesn't work correctly with memoization. Needs to
-#   return multiple word sets.
+# Memoization might not be needed. It's probably close enough without it.
+# Need to extra trie lookup and dictionary to seperate modules
+
 
 import sys, os, readline, argparse
 
