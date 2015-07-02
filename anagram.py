@@ -19,7 +19,7 @@ class Config:
     includePartialMatches = False
     sortCharactersByFrequency = True
     memoize = False
-    max_size = 20
+    max_size = 50
     categories = [
         'english', #Base category
         'american',
