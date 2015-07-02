@@ -1,5 +1,8 @@
-# Optimization: Memoize search on trie nodes based on wilds/left/skipped
-# What about sorting by character frequency?
+# Can also memoize failure: If we've already searched with more skpped/missed/wilds
+#   and that already failed, we can just stop now.
+# Memoization might not be needed. It's probably close enough without it.
+# Need to extra trie lookup and dictionary to seperate modules
+
 
 import sys, os, readline, argparse
 
@@ -8,7 +11,8 @@ class Config:
     traceLookup = False
     includePartialMatches = False
     sortCharactersByFrequency = True
-    max_size = 20
+    memoize = False
+    max_size = 50
     categories = [
         'english', #Base category
         'american',
@@ -101,6 +105,7 @@ class TrieNode(object):
         super(TrieNode, self).__init__()
         self._children = { }
         self._words = set()
+        self._memoizedLookups = [ ]
         Stats.nodeCount += 1
     def getOrCreateChild(self, char):
         n = self._children.get(char)
@@ -126,6 +131,13 @@ class TrieNode(object):
         for word in self.words:
             s += " " + str(word)
         return s
+    @property
+    def memoizedLookups(self):
+        return self._memoizedLookups
+    def clearMemoized(self):
+        self._memoizedLookups = []
+        for child in self._children.values():
+            child.clearMemoized()
 
 def calcWordSetLength(wordSet):
     return sum(map(lambda w: len(w.word), wordSet))
@@ -197,38 +209,63 @@ def combineSortChars(x, y):
         outputNode = CharNode(char, outputNode)
     return outputNode
 
-def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, wordSet, depth):
-    for word in node.words:
-        newWordSet = wordSet | set([word])
+def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, currentWordSets, depth):
+    originalNode = node
+    remainingStr = ""
+    skippedStr = ""
+    if Config.memoize:
+        remainingStr = str(charNode)
+        skippedStr = str(skippedNode)
+        for memo in originalNode.memoizedLookups:
+            if remainingStr == memo.remainingStr and skippedStr == memo.skippedStr and memo.wilds == wilds:
+                for cws in currentWordSets:
+                    for mws in memo.wordSets:
+                        fullWordSet = cws | mws
+                        if len(fullWordSet) > 0:
+                            foundWordSets.add(fullWordSet)
+                return #Early return since it's memoized
+
+    if node and node.words:
+        newCurrentWordSets = []
         newCharNode = combineSortChars(charNode, skippedNode)
-        if Config.traceLookup: print "%sFound: %s (already %s), continuing with %s" % (depth*" ", word, wordSet, newCharNode)
-        doLookup(rootNode, rootNode, newCharNode, None, wilds, foundWordSets, newWordSet, depth+1)
+        for cws in currentWordSets:
+            for word in node.words:
+                newCurrentWordSets.append(cws.union([word]))
+                if Config.traceLookup: print "%sFound: %s (already %s), continuing with %s" % (depth*" ", word, cws, newCharNode)
+        doLookup(rootNode, rootNode, newCharNode, None, wilds, foundWordSets, newCurrentWordSets, depth+1)
+        # currentWordSets = newCurrentWordSets
 
     if wilds > 0:
         if Config.traceLookup: print "%sUsing a wildcard to search all children..." % (depth*" ")
         for n in node.children:
-            doLookup(rootNode, n, charNode, skippedNode, wilds-1, foundWordSets, wordSet, depth+1)
+            doLookup(rootNode, n, charNode, skippedNode, wilds-1, foundWordSets, currentWordSets, depth+1)
 
-    if charNode == None:
-        if Config.traceLookup: print "%sNo characters left, terminating with %i word sets" % (depth*" ", len(wordSet))
-        if len(wordSet) > 0:
-            foundWordSets.add(frozenset(wordSet))
-        return
-
-    char = charNode.char
-    charNode = charNode.next
-
-    if Config.traceLookup: print "%sSearching by skipping %s, %s left, %s skipped" % (depth*" ", char, charNode, CharNode(char, skippedNode))
-    doLookup(rootNode, node, charNode, CharNode(char, skippedNode), wilds, foundWordSets, wordSet, depth+1)
-
-    node = node.getChild(char)
-    if node:
-        if Config.traceLookup: print "%sSearching by using %s. %s left, %s skipped" % (depth*" ", char, charNode, skippedNode)
-        doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, wordSet, depth+1)
+    if node == None or charNode == None:
+        if Config.traceLookup: print "%sNo characters or children left, terminating with %i word sets" % (depth*" ", len(currentWordSets))
+        for cws in currentWordSets:
+            if len(cws) > 0:
+                foundWordSets.add(cws)
     else:
-        if Config.traceLookup: print "%sNo child for %s, terminating with %i word sets" % (depth*" ", char, len(wordSet))
-        if len(wordSet) > 0:
-            foundWordSets.add(frozenset(wordSet))
+        char = charNode.char
+        charNode = charNode.next
+
+        if Config.traceLookup: print "%sSearching by skipping %s, %s left, %s skipped" % (depth*" ", char, charNode, CharNode(char, skippedNode))
+        doLookup(rootNode, node, charNode, CharNode(char, skippedNode), wilds, foundWordSets, currentWordSets, depth+1)
+
+        node = node.getChild(char)
+        if node:
+            if Config.traceLookup: print "%sSearching by using %s. %s left, %s skipped" % (depth*" ", char, charNode, skippedNode)
+            doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, currentWordSets, depth+1)
+
+    if Config.memoize:
+        originalNode.memoizedLookups.append(MemorizedLookup(remainingStr, skippedStr, wilds, currentWordSets))
+
+class MemorizedLookup:
+    def __init__(self, remainingStr, skippedStr, wilds, wordSets):
+        self.remainingStr = remainingStr
+        self.skippedStr = skippedStr
+        self.wilds = wilds
+        self.wordSets = wordSets
 
 def lookup(rootNode, searchWord):
     # print 'Looking up "%s"...' % (searchWord)
@@ -242,7 +279,9 @@ def lookup(rootNode, searchWord):
     for ch in reversedChars:
         chars = CharNode(ch, chars)
     foundWordSets = set()
-    doLookup(rootNode, rootNode, chars, None, wilds, foundWordSets, frozenset(), 0)
+    doLookup(rootNode, rootNode, chars, None, wilds, foundWordSets, [frozenset()], 0)
+    if Config.memoize:
+        rootNode.clearMemoized()
     return foundWordSets
 
 def printWords(foundWordSets, expectedLength):
