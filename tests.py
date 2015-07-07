@@ -1,12 +1,12 @@
 import unittest
-import anagram
+import anagram, trie, config, wordlist
 
 from datetime import datetime
 
 class TestAnagrams(unittest.TestCase):
     def setUp(self):
         startTime = datetime.now()
-        self.trie = anagram.buildTrie()
+        self.trie = trie.buildTrie()
         print "Build took %s" % (datetime.now() - startTime)
 
     def assertLookup(self, searchText, someMatch):

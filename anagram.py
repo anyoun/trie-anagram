@@ -1,198 +1,11 @@
-# Can also memoize failure: If we've already searched with more skpped/missed/wilds
-#   and that already failed, we can just stop now.
-# Memoization might not be needed. It's probably close enough without it.
-# Need to extra trie lookup and dictionary to seperate modules
-
-
 import sys, os, readline, argparse
-
-
-class Config:
-    traceLookup = False
-    includePartialMatches = False
-    sortCharactersByFrequency = True
-    memoize = False
-    max_size = 50
-    categories = [
-        'english', #Base category
-        'american',
-        #'canadian',
-        #'british',
-        #'british_z',
-    ]
-    subcategories = [
-        # 'abbreviations',
-        # 'contractions',
-        'proper-names',
-        'upper',
-        'words',
-    ]
-
-class Stats:
-    nodeCount = 0
-    wordCount = 0
-
-    letterCounts = { }
-
-class Filtering:
-    _allowed_one_letter = set([
-        'a',
-        'i',
-    ])
-    _allowed_two_letter = set([
-        'ah',
-        'al',
-        'by',
-        'de',
-        'do',
-        'ex',
-        'em',
-        'en',
-        'hi',
-        'ha',
-        'ho',
-        'if',
-        'in',
-        'is',
-        'it',
-        'ma',
-        'my',
-        'oh',
-        'on',
-        'or',
-        'ox',
-        'un',
-        'us',
-        'we',
-    ])
-    @classmethod
-    def allowWord(self, word):
-        return not ('\'' in word or \
-            (len(word) == 1 and word not in self._allowed_one_letter) or \
-            (len(word) == 2 and word not in self._allowed_two_letter))
-
-class CharNode:
-    def __init__(self, char, next):
-        self._char = char
-        self._next = next
-    @property
-    def char(self):
-        return self._char
-    @property
-    def next(self):
-        return self._next
-    def __str__(self):
-        x = self
-        s = ""
-        while x != None:
-            s += x.char
-            x = x.next
-        return s
-
-class Word:
-    def __init__(self, word, frequency, subcategory):
-        self.word = word
-        self.frequency = frequency
-        self.subcategory = subcategory
-    def __str__(self):
-        return '%s (%i%% %s)' % (self.word, self.frequency, self.subcategory)
-    @property
-    def weight(self):
-        return len(self.word) * 10 + self.frequency / 10
-
-class TrieNode(object):
-    def __init__(self):
-        super(TrieNode, self).__init__()
-        self._children = { }
-        self._words = set()
-        self._memoizedLookups = [ ]
-        Stats.nodeCount += 1
-    def getOrCreateChild(self, char):
-        n = self._children.get(char)
-        if not n:
-            n = TrieNode()
-            self._children[char] = n
-        return n
-    def getChild(self, char):
-        return self._children.get(char)
-    @property
-    def children(self):
-        return self._children.values()
-    def addWord(self, word, frequency, subcategory):
-        self._words.add(Word(word, frequency, subcategory))
-    @property
-    def words(self):
-        return self._words
-    def toString(self, indent = 0):
-        s = "{ "
-        for char,node in self._children.items():
-            s += "\n%s%s: %s" % (' '*indent, char, node.toString(indent+1))
-        s += " }"
-        for word in self.words:
-            s += " " + str(word)
-        return s
-    @property
-    def memoizedLookups(self):
-        return self._memoizedLookups
-    def clearMemoized(self):
-        self._memoizedLookups = []
-        for child in self._children.values():
-            child.clearMemoized()
+import config, wordlist, trie
 
 def calcWordSetLength(wordSet):
     return sum(map(lambda w: len(w.word), wordSet))
 
 def calcWordSetWeight(wordSet):
     return sum(map(lambda w: w.weight, wordSet)) / len(wordSet)
-
-def sortChars(charList):
-    if Config.sortCharactersByFrequency:
-        charList.sort(key=lambda c: Stats.letterCounts.get(c, 0))
-    else:
-        charList.sort()
-
-def wordToChars(word):
-    word = word.strip().strip('.').lower()
-    chars = list(word)
-    sortChars(chars)
-    return chars
-
-def buildFrequency(f, category, subcategory, size):
-    for line in f:
-        word = line.strip().lower()
-        if Filtering.allowWord(word):
-            for char in wordToChars(word):
-                if Config.sortCharactersByFrequency:
-                    Stats.letterCounts[char] = Stats.letterCounts.get(char, 0) + 1
-
-def addFileToTrie(rootNode, f, frequency, subcategory):
-    for line in f:
-        node = rootNode
-        word = line.strip().lower()
-        if Filtering.allowWord(word):
-            for char in wordToChars(word):
-                node = node.getOrCreateChild(char)
-            node.addWord(word, frequency, subcategory)
-            Stats.wordCount += 1
-    return rootNode
-
-def withAllFiles(func):
-    sizes = [ 10, 20, 35, 40, 50, 55, 60, 70, 80, 95 ]
-    for size in sizes:
-        if size > Config.max_size:
-            break
-        for category in Config.categories:
-            for subcategory in Config.subcategories:
-                filePath = 'scowl_word_lists/%s-%s.%i' % (category, subcategory, size)
-                if os.path.exists(filePath):
-                    f = open(filePath, 'r')
-                    func(f, category, subcategory, size)
-
-def buildTrie():
-    rootNode = TrieNode()
-    withAllFiles(buildFrequency)
-    withAllFiles(lambda f,cate,sub,size: addFileToTrie(rootNode, f, size, sub))
-    return rootNode
 
 def combineSortChars(x, y):
     allList = []
@@ -202,25 +15,25 @@ def combineSortChars(x, y):
     while y != None:
         allList.append(y.char)
         y = y.next
-    sortChars(allList)
+    trie.sortChars(allList)
     allList.reverse()
     outputNode = None
     for char in allList:
-        outputNode = CharNode(char, outputNode)
+        outputNode = trie.CharNode(char, outputNode)
     return outputNode
 
 def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, currentWordSets, depth):
     originalNode = node
     remainingStr = ""
     skippedStr = ""
-    if Config.memoize:
+    if config.Settings.memoize:
         remainingStr = str(charNode)
         skippedStr = str(skippedNode)
         for memo in originalNode.memoizedLookups:
             if remainingStr == memo.remainingStr and skippedStr == memo.skippedStr and memo.wilds == wilds:
                 for cws in currentWordSets:
                     for mws in memo.wordSets:
-                        fullWordSet = cws | mws
+                        fuWordSet = cws | mws
                         if len(fullWordSet) > 0:
                             foundWordSets.add(fullWordSet)
                 return #Early return since it's memoized
@@ -231,7 +44,7 @@ def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, curren
         for cws in currentWordSets:
             for word in node.words:
                 newCurrentWordSets.append(cws.union([word]))
-                if Config.traceLookup: print "%sFound: %s (already %s), continuing with %s" % (depth*" ", word, cws, newCharNode)
+                if config.Settings.traceLookup: print "%sFound: %s (already %s), continuing with %s" % (depth*" ", word, cws, newCharNode)
         doLookup(rootNode, rootNode, newCharNode, None, wilds, foundWordSets, newCurrentWordSets, depth+1)
         # currentWordSets = newCurrentWordSets
 
@@ -241,7 +54,7 @@ def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, curren
             doLookup(rootNode, n, charNode, skippedNode, wilds-1, foundWordSets, currentWordSets, depth+1)
 
     if node == None or charNode == None:
-        if Config.traceLookup: print "%sNo characters or children left, terminating with %i word sets" % (depth*" ", len(currentWordSets))
+        if config.Settings.traceLookup: print "%sNo characters or children left, terminating with %i word sets" % (depth*" ", len(currentWordSets))
         for cws in currentWordSets:
             if len(cws) > 0:
                 foundWordSets.add(cws)
@@ -249,15 +62,15 @@ def doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, curren
         char = charNode.char
         charNode = charNode.next
 
-        if Config.traceLookup: print "%sSearching by skipping %s, %s left, %s skipped" % (depth*" ", char, charNode, CharNode(char, skippedNode))
-        doLookup(rootNode, node, charNode, CharNode(char, skippedNode), wilds, foundWordSets, currentWordSets, depth+1)
+        if config.Settings.traceLookup: print "%sSearching by skipping %s, %s left, %s skipped" % (depth*" ", char, charNode, CharNode(char, skippedNode))
+        doLookup(rootNode, node, charNode, trie.CharNode(char, skippedNode), wilds, foundWordSets, currentWordSets, depth+1)
 
         node = node.getChild(char)
         if node:
-            if Config.traceLookup: print "%sSearching by using %s. %s left, %s skipped" % (depth*" ", char, charNode, skippedNode)
+            if config.Settings.traceLookup: print "%sSearching by using %s. %s left, %s skipped" % (depth*" ", char, charNode, skippedNode)
             doLookup(rootNode, node, charNode, skippedNode, wilds, foundWordSets, currentWordSets, depth+1)
 
-    if Config.memoize:
+    if config.Settings.memoize:
         originalNode.memoizedLookups.append(MemorizedLookup(remainingStr, skippedStr, wilds, currentWordSets))
 
 class MemorizedLookup:
@@ -274,13 +87,13 @@ def lookup(rootNode, searchWord):
         if char == '.':
             wilds += 1
     chars = None
-    reversedChars = wordToChars(searchWord)
+    reversedChars = trie.wordToChars(searchWord)
     reversedChars.reverse()
     for ch in reversedChars:
-        chars = CharNode(ch, chars)
+        chars = trie.CharNode(ch, chars)
     foundWordSets = set()
     doLookup(rootNode, rootNode, chars, None, wilds, foundWordSets, [frozenset()], 0)
-    if Config.memoize:
+    if config.Settings.memoize:
         rootNode.clearMemoized()
     return foundWordSets
 
@@ -306,7 +119,7 @@ if __name__ == '__main__':
 
     Config.includePartialMatches = args.includePartialMatches
 
-    trie = buildTrie()
+    trie = trie.buildTrie()
     print "Built %i nodes for %i words" % (Stats.nodeCount, Stats.wordCount)
 
     if args.dump:
