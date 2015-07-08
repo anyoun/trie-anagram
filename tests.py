@@ -22,7 +22,7 @@ class TestAnagrams(unittest.TestCase):
             stringSets.add(s)
         self.assertIn(someMatch, stringSets)
 
-    def test_single_words(self):
+    def test_a_single_words(self):
         startTime = datetime.now()
         self.assertLookup('my', 'my')
         self.assertLookup('book', 'book')
@@ -32,7 +32,7 @@ class TestAnagrams(unittest.TestCase):
         self.assertLookup('clark', 'clark')
         print "single_words took %s" % (datetime.now() - startTime)
 
-    def test_multiple_words(self):
+    def test_b_multiple_words(self):
         startTime = datetime.now()
         self.assertLookup('roommy', 'my room')
         self.assertLookup('dormitory', 'dirty room')

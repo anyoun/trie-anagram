@@ -1,4 +1,4 @@
-import config, wordlist
+import config, wordlist, string
 
 class CharNode:
     def __init__(self, char, next):
@@ -34,7 +34,7 @@ class TrieNode(object):
         super(TrieNode, self).__init__()
         self._children = { }
         self._words = set()
-        self._memoizedLookups = [ ]
+        self._memoizedLookups = { }
         config.Stats.nodeCount += 1
     def getOrCreateChild(self, char):
         n = self._children.get(char)
@@ -64,7 +64,7 @@ class TrieNode(object):
     def memoizedLookups(self):
         return self._memoizedLookups
     def clearMemoized(self):
-        self._memoizedLookups = []
+        self._memoizedLookups = {}
         for child in self._children.values():
             child.clearMemoized()
 
@@ -73,6 +73,15 @@ def wordToChars(word):
     chars = list(word)
     sortChars(chars)
     return chars
+
+def wordSetsToStr(wordSets):
+    s = "["
+    for ws in wordSets:
+        s += "("
+        s += string.join([str(w.word) for w in ws], ", ")
+        s += ")"
+    s += "]"
+    return s
 
 def sortChars(charList):
     if config.Settings.sortCharactersByFrequency:

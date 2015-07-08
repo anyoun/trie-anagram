@@ -2,7 +2,7 @@ class Settings:
     traceLookup = False
     includePartialMatches = False
     sortCharactersByFrequency = True
-    memoize = False
+    memoize = True
     max_size = 50
     categories = [
         'english', #Base category

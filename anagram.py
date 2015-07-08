@@ -22,56 +22,63 @@ def combineSortChars(x, y):
         outputNode = trie.CharNode(char, outputNode)
     return outputNode
 
-def doLookup(rootNode, node, charNode, skippedNode, wilds, currentWordSets, depth):
+def crossUnionSets(xSet, ySet):
+    o = set()
+    for x in xSet:
+        for y in ySet:
+            o.add(x | y)
+    return frozenset(o)
+
+def unionAdd(results, xSet, ySet):
+    for x in xSet:
+        for y in ySet:
+            results.add(x | y)
+
+def doLookup(rootNode, node, charNode, skippedNode, wilds, depth):
     originalNode = node
     remainingStr = ""
     skippedStr = ""
-    foundWordSets = set()
+    newWordSets = set()
     if config.Settings.memoize:
         remainingStr = combineSortChars(charNode, skippedNode)
-        for memo in originalNode.memoizedLookups:
-            if remainingStr == memo.remainingStr and memo.wilds == wilds:
-                for cws in currentWordSets:
-                    for mws in memo.wordSets:
-                        fullWordSet = cws | mws
-                        if len(fullWordSet) > 0:
-                            foundWordSets.add(fullWordSet)
-                return frozenset(foundWordSets)
+        memo = originalNode.memoizedLookups.get( (remainingStr,wilds) )
+        if memo:
+            return memo
 
     if node and node.words:
-        newCurrentWordSets = []
         newCharNode = combineSortChars(charNode, skippedNode)
-        for cws in currentWordSets:
-            for word in node.words:
-                newCurrentWordSets.append(cws.union([word]))
-                if config.Settings.traceLookup: print "%sFound: %s (already %s), continuing with %s" % (depth*" ", word, cws, newCharNode)
-        foundWordSets.update(doLookup(rootNode, rootNode, newCharNode, None, wilds, newCurrentWordSets, depth+1))
+        newWords = frozenset([ frozenset([w]) for w in node.words ])
+        newWordSets.update(newWords)
+        if config.Settings.traceLookup: print "%sFound: %s, continuing with %s" % (depth*" ", str(node.words), newCharNode)
+        unionAdd(newWordSets, newWords, doLookup(rootNode, rootNode, newCharNode, None, wilds, depth+1))
 
     if wilds > 0:
         if Config.traceLookup: print "%sUsing a wildcard to search all children..." % (depth*" ")
         for n in node.children:
-            foundWordSets.update(doLookup(rootNode, n, charNode, skippedNode, wilds-1, currentWordSets, depth+1))
+            newWordSets.update(doLookup(rootNode, n, charNode, skippedNode, wilds-1, depth+1))
 
+    # Can't cross union everything. Need to find words on _this_ node and cross union them with all of the possible paths.
+    # But don't combine paths with each other.
     if node == None or charNode == None:
-        if config.Settings.traceLookup: print "%sNo characters or children left, terminating with %i word sets" % (depth*" ", len(currentWordSets))
-        for cws in currentWordSets:
-            if len(cws) > 0:
-                foundWordSets.add(cws)
+        if config.Settings.traceLookup: print "%sNo characters or children left, terminating" % (depth*" ")
     else:
         char = charNode.char
         charNode = charNode.next
 
-        if config.Settings.traceLookup: print "%sSearching by skipping %s, %s left, %s skipped" % (depth*" ", char, charNode, CharNode(char, skippedNode))
-        foundWordSets.update(doLookup(rootNode, node, charNode, trie.CharNode(char, skippedNode), wilds, currentWordSets, depth+1))
+        if config.Settings.traceLookup: print "%sSearching by skipping %s, %s left, %s skipped" % (depth*" ", char, charNode, trie.CharNode(char, skippedNode))
+        newWordSets.update(doLookup(rootNode, node, charNode, trie.CharNode(char, skippedNode), wilds, depth+1))
 
         node = node.getChild(char)
         if node:
             if config.Settings.traceLookup: print "%sSearching by using %s. %s left, %s skipped" % (depth*" ", char, charNode, skippedNode)
-            foundWordSets.update(doLookup(rootNode, node, charNode, skippedNode, wilds, currentWordSets, depth+1))
+            newWordSets.update(doLookup(rootNode, node, charNode, skippedNode, wilds, depth+1))
 
     if config.Settings.memoize:
-        originalNode.memoizedLookups.append(MemorizedLookup(remainingStr, wilds, foundWordSets))
-    return foundWordSets
+        originalNode.memoizedLookups[(remainingStr,wilds)] = newWordSets
+
+    if config.Settings.traceLookup: print "%sReturning with %s" % (depth*" ", trie.wordSetsToStr(newWordSets))
+
+    return newWordSets
 
 class MemorizedLookup:
     def __init__(self, remainingStr, wilds, wordSets):
@@ -90,7 +97,7 @@ def lookup(rootNode, searchWord):
     reversedChars.reverse()
     for ch in reversedChars:
         chars = trie.CharNode(ch, chars)
-    foundWordSets = doLookup(rootNode, rootNode, chars, None, wilds, [frozenset()], 0)
+    foundWordSets = doLookup(rootNode, rootNode, chars, None, wilds, 0)
     if config.Settings.memoize:
         rootNode.clearMemoized()
     return foundWordSets
