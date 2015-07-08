@@ -57,8 +57,6 @@ def doLookup(rootNode, node, charNode, skippedNode, wilds, depth):
         for n in node.children:
             newWordSets.update(doLookup(rootNode, n, charNode, skippedNode, wilds-1, depth+1))
 
-    # Can't cross union everything. Need to find words on _this_ node and cross union them with all of the possible paths.
-    # But don't combine paths with each other.
     if node == None or charNode == None:
         if config.Settings.traceLookup: print "%sNo characters or children left, terminating" % (depth*" ")
     else:
@@ -80,14 +78,7 @@ def doLookup(rootNode, node, charNode, skippedNode, wilds, depth):
 
     return newWordSets
 
-class MemorizedLookup:
-    def __init__(self, remainingStr, wilds, wordSets):
-        self.remainingStr = remainingStr
-        self.wilds = wilds
-        self.wordSets = wordSets
-
 def lookup(rootNode, searchWord):
-    # print 'Looking up "%s"...' % (searchWord)
     wilds = 0
     for char in searchWord:
         if char == '.':
